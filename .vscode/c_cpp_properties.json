@@ -1,0 +1,27 @@
+{
+  "configurations": [
+      {
+          "name": "Linux",
+          "includePath": [
+              "${workspaceFolder}/**",    // 将本地工作目录添加到include路径中，
+                                          // 这样本地的所有头文件都可以被VSCode索引，这样编辑就不会触发红色的波浪线；
+              "~/libtorch/include/**",
+              "~/libtorch/include/torch/csrc/api/include/" ,
+              "~/libtorch/include/ATen/**",
+              "~/libtorch/include/tensorpipe/**",
+              "~/libtorch/include/tensorpipe/common/**",
+              "~/libtorch/include/torch/**",
+              "~/libtorch/include/**",
+              "/home/wtr/libwb/**"
+                       // 将Linux下的引用路径添加到include路径中，
+                                          // 对于一些第三方依赖库，如Boost的头文件，就能被VSCode索引
+          ],
+          "defines": [],
+          "compilerPath": "/usr/bin/gcc",
+          "cStandard": "c11",
+          "cppStandard": "c++11",
+          "intelliSenseMode": "gcc-x64"
+      }
+  ],
+  "version": 4
+}
