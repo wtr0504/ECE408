@@ -12,7 +12,8 @@
               "~/libtorch/include/tensorpipe/common/**",
               "~/libtorch/include/torch/**",
               "~/libtorch/include/**",
-              "/home/wtr/libwb/**"
+              "/home/wtr/libwb/**",
+              "~/libwb"
                        // 将Linux下的引用路径添加到include路径中，
                                           // 对于一些第三方依赖库，如Boost的头文件，就能被VSCode索引
           ],

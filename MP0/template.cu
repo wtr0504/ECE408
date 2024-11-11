@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv) {
   int deviceCount;
-
+while(1){
   wbArg_read(argc, argv);
 
   cudaGetDeviceCount(&deviceCount);
@@ -53,6 +53,6 @@ int main(int argc, char **argv) {
   }
 
   wbTime_stop(GPU, "Getting GPU Data."); //@@ stop the timer
-
+}
   return 0;
 }

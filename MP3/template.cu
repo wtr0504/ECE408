@@ -11,6 +11,7 @@
     }                                                                     \
   } while (0)
 
+#define THREADNX 32
 // Compute C = A * B
 __global__ void matrixMultiplyShared(float *A, float *B, float *C,
                                      int numARows, int numAColumns,
@@ -18,6 +19,37 @@ __global__ void matrixMultiplyShared(float *A, float *B, float *C,
                                      int numCRows, int numCColumns) {
   //@@ Insert code to implement matrix multiplication here
   //@@ You have to use shared memory for this MP
+  __shared__ float matA[THREADNX][THREADNX];
+  __shared__ float matB[THREADNX][THREADNX];
+
+  const int tidr = threadIdx.x;
+  const int tidc = threadIdx.y;
+  const int bidr = blockIdx.x * blockDim.x;
+  const int bidc = blockIdx.y * blockDim.y;
+  
+
+  for(int j = 0 ; j < numAColumns; j += THREADNX){
+    if(tidr + bidr < numARows && j + tidc < numAColumns){
+      matA[tidr][tidc] = A[(tidr + bidr) * numAColumns + j + tidc];
+    } else {
+      matA[tidr][tidc] = 0.0;
+    }
+
+    if(tidr + j < numBRows && tidc + bidc < numBColumns){
+      matB[tidr][tidc] = B[(tidr + j) * numBColumns + tidc + bidc];
+    } else {
+      matB[tidr][tidc] = 0.0;
+    }
+    __syncthreads();
+    float res = 0.0;
+    for(int i = 0; i < THREADNX;i++){
+      res += matA[tidr][i] * matB[i][tidc];
+    }
+    __syncthreads();
+    if(tidc + bidc < numCColumns && tidr + bidr < numCRows){
+      C[(tidr + bidr) * numCColumns + tidc + bidc] += res;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -44,8 +76,9 @@ int main(int argc, char **argv) {
   hostB = (float *)wbImport(wbArg_getInputFile(args, 1), &numBRows,
                             &numBColumns);
   //@@ Set numCRows and numCColumns
-  numCRows = 0;
-  numCColumns = 0;
+  numCRows = numARows;
+  numCColumns = numBColumns;
+  hostC = (float*)malloc(numCColumns * numCRows * sizeof(float));
   //@@ Allocate the hostC matrix
   wbTime_stop(Generic, "Importing data and creating memory on host");
 
@@ -54,16 +87,25 @@ int main(int argc, char **argv) {
 
   wbTime_start(GPU, "Allocating GPU memory.");
   //@@ Allocate GPU memory here
+  cudaMalloc((void**)&deviceA, numARows*numAColumns* sizeof(float));
+  cudaMalloc((void**)&deviceB, numBRows*numBColumns* sizeof(float));
+  cudaMalloc((void**)&deviceC, numCRows*numCColumns* sizeof(float));
 
   wbTime_stop(GPU, "Allocating GPU memory.");
 
   wbTime_start(GPU, "Copying input memory to the GPU.");
   //@@ Copy memory to the GPU here
+  cudaMemcpy((void*)deviceA, (void*)hostA,  numARows*numAColumns*sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy((void*)deviceB, (void*)hostB,  numBRows*numBColumns*sizeof(float), cudaMemcpyHostToDevice);
 
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   //@@ Initialize the grid and block dimensions here
 
+  dim3 blocks((numCRows + THREADNX - 1)/THREADNX,(numCColumns + THREADNX-1)/THREADNX);
+  dim3 threadsPerblock(THREADNX,THREADNX);
+  matrixMultiplyShared<<<blocks,threadsPerblock>>>(deviceA,deviceB,deviceC,numARows,numAColumns,numBRows,numBColumns,numCRows,numCColumns);
+  
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Launch the GPU Kernel here
 
@@ -72,12 +114,14 @@ int main(int argc, char **argv) {
 
   wbTime_start(Copy, "Copying output memory to the CPU");
   //@@ Copy the GPU memory back to the CPU here
-
+  cudaMemcpy((void*)hostC, (void*)deviceC, numCRows*numCColumns*sizeof(float), cudaMemcpyDeviceToHost);
   wbTime_stop(Copy, "Copying output memory to the CPU");
 
   wbTime_start(GPU, "Freeing GPU Memory");
   //@@ Free the GPU memory here
-
+  cudaFree(deviceA);
+  cudaFree(deviceB);
+  cudaFree(deviceC);
   wbTime_stop(GPU, "Freeing GPU Memory");
 
   wbSolution(args, hostC, numCRows, numCColumns);

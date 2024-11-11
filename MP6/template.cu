@@ -6,7 +6,18 @@
 
 #include <wb.h>
 
-#define BLOCK_SIZE 512 //@@ You can change this
+#define CHECK(call)\
+{\
+  const cudaError_t error=call;\
+  if(error!=cudaSuccess)\
+  {\
+      printf("ERROR: %s:%d,",__FILE__,__LINE__);\
+      printf("code:%d,reason:%s\n",error,cudaGetErrorString(error));\
+      exit(1);\
+  }\
+}
+
+// #define BLOCK_SIZE 512 //@@ You can change this
 
 #define wbCheck(stmt)                                                     \
   do {                                                                    \
@@ -18,11 +29,37 @@
     }                                                                     \
   } while (0)
 
+#define BLOCK_SIZE 1024
+
+#define BLOCK_NUM 1024
+__device__ float blocks_max[BLOCK_NUM];
 __global__ void scan(float *input, float *output, int len) {
   //@@ Modify the body of this function to complete the functionality of
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from the host
+  const int idx = blockDim.x * blockIdx.x + threadIdx.x;
+  const int tid = threadIdx.x;
+  for (int stride = 1; stride < blockDim.x; stride *= 2) {
+    if (idx < len && tid - stride >= 0) {
+      output[idx] = input[idx] + input[idx - stride];
+      __syncthreads();
+      input[idx] = output[idx];
+      __syncthreads();
+    }
+  }
+  if (tid == blockDim.x - 1  && idx < len) {
+    blocks_max[blockIdx.x] = output[idx];
+    // printf("block idx : %d, block max %f\n",blockIdx.x,output[idx]);
+  }
+}
+
+__global__ void add_blocks(float *in_out, int len) {
+  for (int i = 0; i < blockIdx.x; i++) {
+    if(blockDim.x * blockIdx.x + threadIdx.x < len) {
+      in_out[blockIdx.x * blockDim.x + threadIdx.x] += blocks_max[i];
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -49,12 +86,13 @@ int main(int argc, char **argv) {
   wbTime_stop(GPU, "Allocating GPU memory.");
 
   wbTime_start(GPU, "Clearing output memory.");
-  wbCheck(cudaMemset(deviceOutput, 0, numElements * sizeof(float)));
+  // wbCheck(cudaMemset(deviceOutput, 0, numElements * sizeof(float)));
   wbTime_stop(GPU, "Clearing output memory.");
 
   wbTime_start(GPU, "Copying input memory to the GPU.");
-  wbCheck(cudaMemcpy(deviceInput, hostInput, numElements * sizeof(float),
+  wbCheck(cudaMemcpy((void*)deviceInput,(void*) hostInput, numElements * sizeof(float),
                      cudaMemcpyHostToDevice));
+  CHECK(cudaMemcpy((void*)deviceOutput,(void*)hostInput,numElements * sizeof(float),cudaMemcpyHostToDevice));
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   //@@ Initialize the grid and block dimensions here
@@ -62,12 +100,17 @@ int main(int argc, char **argv) {
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
-
-  cudaDeviceSynchronize();
+  dim3 blocks((numElements + BLOCK_SIZE -1 / BLOCK_SIZE));
+  dim3 threadsPerblock(BLOCK_SIZE);
+  scan<<<blocks, threadsPerblock>>>(deviceInput, deviceOutput, numElements);
+  wbCheck(cudaDeviceSynchronize());
+  add_blocks<<<blocks, threadsPerblock>>>(deviceOutput, numElements);
+  printf("---===-\n");
+  wbCheck(cudaDeviceSynchronize());
   wbTime_stop(Compute, "Performing CUDA computation");
 
   wbTime_start(Copy, "Copying output memory to the CPU");
-  wbCheck(cudaMemcpy(hostOutput, deviceOutput, numElements * sizeof(float),
+  wbCheck(cudaMemcpy((void*)hostOutput, (void*)deviceOutput, numElements * sizeof(float),
                      cudaMemcpyDeviceToHost));
   wbTime_stop(Copy, "Copying output memory to the CPU");
 
